@@ -1,0 +1,358 @@
+CLASS_NAMES: ['car','truck', 'construction_vehicle', 'bus', 'trailer',
+              'barrier', 'motorcycle', 'bicycle', 'pedestrian','traffic_cone']
+
+DATA_CONFIG:
+    _BASE_CONFIG_: cfgs/dataset_configs/nuscenes_dataset.yaml
+    DATASET: 'NuScenesDatasetTracking'
+    DATA_PATH: '../data/nuscenes'
+    VERSION: 'v1.0-trainval'
+    FILTER_MIN_POINTS_IN_GT: True
+    TEMP_FUSION: False
+    USE_FUTURE_FEAT: False
+    LOAD_ROAD_MAP: False
+    MAX_SWEEPS: 10
+    TRAIN_LINE: False
+    DOWN_SAMPLE: 8
+    INFO_PATH: {'train': ['nuscenes_infos_10sweeps_train_occ.pkl'], 
+               'test': ['nuscenes_infos_10sweeps_val_occ.pkl']}
+
+    SAMPLED_INTERVAL: {
+        'train': 1,
+        'test': 1
+    }
+    
+    BALANCED_RESAMPLING: True
+    SEQUENCE_CONFIG:
+        ENABLED: True
+        SAMPLE_OFFSET: [0,0]
+
+    POINT_FEATURE_ENCODING: {
+        encoding_type: absolute_coordinates_encoding,
+        used_feature_list: ['x', 'y', 'z', 'intensity', 'timestamp','seq_idx'],
+        src_feature_list: ['x', 'y', 'z', 'intensity', 'timestamp','seq_idx'],
+    }
+
+    POINT_CLOUD_RANGE: [-54.0, -54.0, -5.0, 54.0, 54.0, 3.0]
+    CAMERA_CONFIG:
+        USE_CAMERA: True
+        IMAGE:
+            FINAL_DIM: [256,704]
+            RESIZE_LIM_TRAIN: [0.38, 0.55]
+            RESIZE_LIM_TEST: [0.48, 0.48]
+
+    MAP_CONFIG:
+      USE_MAP: True
+      CLASS_NAMES: ['drivable_area', 'ped_crossing', 'walkway', 'stop_line', 'carpark_area', 'divider']
+
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['placeholder']
+        AUG_CONFIG_LIST:
+            - NAME: gt_sampling
+              IMG_AUG_TYPE: nuscenes
+              IMG_AUG_MIXUP: 0.7
+              DB_INFO_PATH:
+                - nuscenes_dbinfos_10sweeps_withvelo.pkl
+
+              PREPARE: {
+                filter_by_min_points: [
+                    'car:5','truck:5', 'construction_vehicle:5', 'bus:5', 'trailer:5',
+                    'barrier:5', 'motorcycle:5', 'bicycle:5', 'pedestrian:5', 'traffic_cone:5'
+                ],
+              }
+
+              USE_SHARED_MEMORY: True
+              DB_DATA_PATH:
+                - nuscenes_10sweeps_withvelo_lidar.npy
+                - nuscenes_10sweeps_withvelo_img.npy
+
+              SAMPLE_GROUPS: [
+                'car:2','truck:3', 'construction_vehicle:7', 'bus:4', 'trailer:6',
+                'barrier:2', 'motorcycle:6', 'bicycle:6', 'pedestrian:2', 'traffic_cone:2'
+              ]
+
+              NUM_POINT_FEATURES: 5
+              DATABASE_WITH_FAKELIDAR: False
+              REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+              LIMIT_WHOLE_SCENE: True
+
+              use_hf: False
+              fr_path: /private_dataset/nuscenes_pcdet/v1.0-trainval/gt_database_10sweeps_withvelo
+              fr_num: 54899
+
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x', 'y']
+
+            - NAME: random_world_rotation
+              WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.9, 1.1]
+
+            - NAME: random_world_translation
+              NOISE_TRANSLATE_STD: [0.5, 0.5, 0.5]
+            
+            - NAME: imgaug_sequence
+              ROT_LIM: [-5.4, 5.4]
+              RAND_FLIP: True
+
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+            'train': True,
+            'test': True
+          }
+
+        - NAME: transform_points_to_voxels
+          VOXEL_SIZE: [0.075, 0.075, 0.2]
+          MAX_POINTS_PER_VOXEL: 10
+          MAX_NUMBER_OF_VOXELS: {
+            'train': 120000,
+            'test': 160000
+          }
+
+        - NAME: image_calibrate_sequence
+        
+        - NAME: image_normalize_sequence
+          mean: [0.485, 0.456, 0.406]
+          std: [0.229, 0.224, 0.225]
+
+        - NAME: load_bev_segmentation
+          ENABLED: True
+          classes: ['drivable_area', 'ped_crossing', 'walkway', 'stop_line', 'carpark_area', 'divider']
+          xbound: [-50.0, 50.0, 0.5]
+          ybound: [-50.0, 50.0, 0.5]
+          dataset_root: '../data/nuscenes/v1.0-trainval'
+          location: ['singapore-onenorth', 'singapore-hollandvillage', 'singapore-queenstown', 'boston-seaport']
+
+
+MODEL:
+    NAME: M3Net
+
+    VFE:
+        NAME: MeanVFE
+
+    BACKBONE_3D:
+        NAME: VoxelResBackBone8x
+        USE_BIAS: False
+
+    MAP_TO_BEV:
+        NAME: HeightCompression
+        NUM_BEV_FEATURES: 256
+    
+    IMAGE_BACKBONE:
+        NAME: SwinTransformer
+        EMBED_DIMS: 96
+        DEPTHS: [2, 2, 6, 2]
+        NUM_HEADS: [3, 6, 12, 24]
+        WINDOW_SIZE: 7
+        MLP_RATIO: 4
+        DROP_RATE: 0.
+        ATTN_DROP_RATE: 0.
+        DROP_PATH_RATE: 0.2
+        PATCH_NORM: True
+        OUT_INDICES: [1, 2, 3]
+        WITH_CP: False
+        CONVERT_WEIGHTS: True
+        INIT_CFG:
+            type: Pretrained
+            checkpoint: /home/xschen/repos/OpenPCDet/swint-nuimages-pretrained.pth
+    
+    NECK:
+        NAME: GeneralizedLSSFPN
+        IN_CHANNELS: [192, 384, 768]
+        OUT_CHANNELS: 256
+        START_LEVEL: 0
+        END_LEVEL: -1
+        NUM_OUTS: 3
+    
+    VTRANSFORM:
+        NAME: DepthLSSTransform
+        IMAGE_SIZE: [256, 704]
+        IN_CHANNEL: 256
+        OUT_CHANNEL: 80
+        FEATURE_SIZE: [32, 88]
+        XBOUND: [-54.0, 54.0, 0.3]
+        YBOUND: [-54.0, 54.0, 0.3]
+        ZBOUND: [-10.0, 10.0, 20.0]
+        DBOUND: [1.0, 60.0, 0.5]
+        DOWNSAMPLE: 2
+        BEV_POOL_V2: False
+    
+    FUSER:
+        NAME: MAFI
+        LIDAR_CHANNEL: 256
+        IMG_CHANNEL: 80
+        IN_CHANNEL: 336
+        OUT_CHANNEL: 256
+
+    BACKBONE_2D:
+        NAME: BaseBEVBackbone
+        LAYER_NUMS: [5, 5]
+        LAYER_STRIDES: [1, 2]
+        NUM_FILTERS: [128, 256]
+        UPSAMPLE_STRIDES: [1, 2]
+        NUM_UPSAMPLE_FILTERS: [256, 256]
+        USE_CONV_FOR_NO_STRIDE: True
+
+    DENSE_HEAD:
+        NAME: M3NetHead
+        CLASS_AGNOSTIC: False
+        USE_NOTSHARE_FFN: True
+        EVAL_DET: True
+        USE_BOXES_ASSIGN: True
+        TRAIN_BOX: True
+        TRAIN_MAP: True
+        TRAIN_OCC: False
+        QUERY_CHANNEL: 256
+        SEG_QUERY_NUM: 30
+        USE_ONE_SEGFEAT: True
+        RES_BEV_FEAT: True
+        QUERY_HEATMAP: True
+        QUERY_SEGMAP: True
+        USE_TOP_SEG: True
+        MAP_QUERY_ATTN: True
+        DIST_QUERY_ATTN: True
+        USE_VM_ENC: False
+        SSM_RATIO: 2.0
+        VM_MLP: 0.0
+        USE_TCS: True
+        TCS_WITH_CA: True
+        USE_DEFORM3D_ATTN: True
+        USE_MAMBA3D_ATTN: False
+        USE_GATE_PROJ: True
+        ENCODER_ONLY: True
+        D_STATE: 16
+        NO_SIGMOID_SCALE: True
+        OCC_LOSS_WEIGHT: 1.0
+        SPLIT_GATE: True
+        loss_weight_cfg:
+            loss_voxel_ce_weight: 1.0
+            loss_voxel_sem_scal_weight: 1.0
+            loss_voxel_geo_scal_weight: 1.0
+            loss_voxel_lovasz_weight: 1.0
+
+        SEM_SEG_HEAD:
+          NAME: MaskFormerHead
+          TEMP_FUSION: True
+          NUM_PROPOSALS: 200
+          WITH_ROAD: False
+          WITH_LINE: True
+          ONE_CHANNEL: False
+          ONLY_VEHICLE: True
+          DOWN_SAMPLE: 8
+          HIDDEN_CHANNEL: 256
+          CONVS_DIM: 256
+          NMS_KERNEL_SIZE: 3
+          IGNORE_VALUE: 255
+          NUM_CLASSES: 10 
+          LOSS_WEIGHT: 1.0
+          MASK_DIM: 256
+          NORM: "GN"
+          PIXEL_DECODER_NAME: "MSDeformAttnPixelDecoder"
+          IN_FEATURES: ["spatial_features_2d"]
+          DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES: ['spatial_features_2d']
+          COMMON_STRIDE: 4
+          TRANSFORMER_ENC_LAYERS: 6
+          
+        MASK_FORMER:
+          TRANSFORMER_DECODER_NAME: "MultiScaleMaskedTransformerDecoder"
+          TRANSFORMER_IN_FEATURE: "multi_scale_pixel_decoder"
+          DEEP_SUPERVISION: True
+          TOP_K: 5
+          TRAIN_LINE: True
+          ATTN_MASK_SCORE: 0.5
+          CLASS_WEIGHT: 2.0
+          CLASS_MATCH_WEIGHT: 2.0
+          MAP_ENC_WEIGHT: 20.0
+          MAP_WEIGHT: 40.0
+          VELS_WEIGHT: 1.0
+          DET_WEIGHT: 2.0
+          HEATMAP_WEIGHT: 6.0
+          HIDDEN_DIM: 256
+          NUM_OBJECT_QUERIES: 200
+          NHEADS: 8
+          DROPOUT: 0.0
+          DIM_FEEDFORWARD: 1024
+          ENC_LAYERS: 0
+          PRE_NORM: False
+          DEC_LAYERS: 2
+
+        NUM_HM_CONV: 2
+        SEPARATE_HEAD_CFG:
+            HEAD_ORDER: ['center', 'height', 'dim', 'rot', 'vel']
+            HEAD_DICT: {
+                'center': {'out_channels': 2, 'num_conv': 2},
+                'height': {'out_channels': 1, 'num_conv': 2},
+                'dim': {'out_channels': 3, 'num_conv': 2},
+                'rot': {'out_channels': 2, 'num_conv': 2},
+                'vel': {'out_channels': 2, 'num_conv': 2},
+            }
+      
+        TARGET_ASSIGNER_CONFIG:
+            FEATURE_MAP_STRIDE: 8
+            DATASET: nuScenes
+            GAUSSIAN_OVERLAP: 0.1
+            MIN_RADIUS: 2
+            HUNGARIAN_ASSIGNER:
+                cls_cost: {'gamma': 2.0, 'alpha': 0.25, 'weight': 0.15}
+                reg_cost: {'weight': 0.25}
+                iou_cost: {'weight': 0.25}
+        
+        LOSS_CONFIG:
+            LOSS_WEIGHTS: {
+                    'cls_weight': 1.0,
+                    'bbox_weight': 1.0,
+                    'hm_weight': 1.0,
+                    'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+                }
+            LOSS_CLS:
+                use_sigmoid: True
+                gamma: 2.0
+                alpha: 0.25
+          
+        POST_PROCESSING:
+            SCORE_THRESH: 0.0
+            POST_CENTER_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
+            NMS_CONFIG:
+                ENABLED: False
+                NMS_TYPE: nms_gpu
+                NMS_THRESH: 0.2
+                NMS_PRE_MAXSIZE: 1000
+                NMS_POST_MAXSIZE: 200
+
+    POST_PROCESSING:
+        RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+        SCORE_THRESH: 0.1
+        OUTPUT_RAW_SCORE: False
+        EVAL_METRIC: kitti
+
+OPTIMIZATION:
+    BATCH_SIZE_PER_GPU: 1
+    NUM_EPOCHS: 12
+    OPTIMIZER: adam_onecycle
+    LR: 0.0008
+    WEIGHT_DECAY: 0.01
+    MOMENTUM: 0.9
+    BETAS: [0.9, 0.999]
+    CREATE_ONE_GROUP: True
+    MOMS: [0.9, 0.8052631]
+    PCT_START: 0.4
+    WARMUP_ITER: 0
+    SPLIT_BACKBONE: False
+    LR_BACKBONE_RATIO: 1.0
+    DIV_FACTOR: 10
+    LR_CLIP: 0.0000001
+    DECAY_STEP_LIST: [35, 45]
+    LR_WARMUP: False
+    WARMUP_EPOCH: 1
+    GRAD_NORM_CLIP: 10
+    LOSS_SCALE_FP16: 32
+
+HOOK:
+  DisableAugmentationHook:
+    DISABLE_AUG_LIST: ['gt_sampling']
+    NUM_LAST_EPOCHS: 3
+ 
