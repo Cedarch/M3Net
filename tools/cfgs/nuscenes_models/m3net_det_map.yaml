@@ -3,7 +3,7 @@ CLASS_NAMES: ['car','truck', 'construction_vehicle', 'bus', 'trailer',
 
 DATA_CONFIG:
     _BASE_CONFIG_: cfgs/dataset_configs/nuscenes_dataset.yaml
-    DATASET: 'NuScenesDatasetTracking'
+    DATASET: 'NuScenesDatasetMTL'
     DATA_PATH: '../data/nuscenes'
     VERSION: 'v1.0-trainval'
     FILTER_MIN_POINTS_IN_GT: True
