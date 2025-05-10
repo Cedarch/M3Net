@@ -134,7 +134,7 @@ if __name__ == '__main__':
                 ]
             ),
             make_cuda_ext(
-                name="ms_deform_attn_ext",
+                name="multi_scale_deformable_attn",
                 module="pcdet.ops.multi_scale_deformable_attn",
                 sources=[
                     "src/ms_deform_attn.cpp",
